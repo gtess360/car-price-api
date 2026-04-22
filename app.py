@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import pickle
 import json
 import numpy as np
@@ -8,8 +7,13 @@ import os
 
 app = Flask(__name__)
 
-# Fix CORS — allow all origins
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Manual CORS — no library needed
+@app.after_request
+def add_cors(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return response
 
 with open('car_price_model.pkl', 'rb') as f:
     model = pickle.load(f)
@@ -29,12 +33,7 @@ def home():
 @app.route('/predict', methods=['POST', 'OPTIONS'])
 def predict():
     if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST')
-        return response
-
+        return jsonify({'status': 'ok'})
     try:
         data = request.json
         required = ['curb_weight', 'engine_size',
@@ -54,12 +53,10 @@ def predict():
         sample_scaled = scaler.transform(sample)
         price = model.predict(sample_scaled)[0]
 
-        response = jsonify({
+        return jsonify({
             'predicted_price': round(float(price), 2),
             'status': 'success'
         })
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
