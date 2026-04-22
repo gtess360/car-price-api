@@ -1,64 +1,69 @@
-# app.py
-
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import pickle
+import json
 import numpy as np
+import pandas as pd
+import os
 
 app = Flask(__name__)
 
-# ── Load model and scaler on startup ──
+# Fix CORS — allow all origins
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 with open('car_price_model.pkl', 'rb') as f:
     model = pickle.load(f)
 
 with open('scaler.pkl', 'rb') as f:
     scaler = pickle.load(f)
 
-print("Model and scaler loaded successfully")
+with open('model_features.json', 'r') as f:
+    features = json.load(f)
 
-# ── Home route — test if API is running ──
+print("Model loaded. Features:", features)
+
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({'status': 'Car Price API is running'})
 
-# ── Predict route ──
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['POST', 'OPTIONS'])
 def predict():
-    try:
-        # Get data from request
-        data = request.json
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
 
-        # Validate all fields exist
+    try:
+        data = request.json
         required = ['curb_weight', 'engine_size',
                     'horsepower', 'highway_mpg', 'width']
         for field in required:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}'}), 400
 
-        # Build feature array
-        # Order must match how scaler was trained
-        features = np.array([[
+        sample = pd.DataFrame([[
             data['curb_weight'],
             data['engine_size'],
             data['horsepower'],
             data['highway_mpg'],
             data['width']
-        ]])
+        ]], columns=features)
 
-        # Scale the input
-        features_scaled = scaler.transform(features)
+        sample_scaled = scaler.transform(sample)
+        price = model.predict(sample_scaled)[0]
 
-        # Predict
-        price = model.predict(features_scaled)[0]
-
-        return jsonify({
+        response = jsonify({
             'predicted_price': round(float(price), 2),
             'status': 'success'
         })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ── Updated run block ──
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
